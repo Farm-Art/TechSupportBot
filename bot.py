@@ -36,9 +36,17 @@ def main(updater):
         states={
             IDLE: [MessageHandler(Filters.regex('^Собрать отчёт в PDF$'),
                                   combine_pdfs),
+                   MessageHandler(Filters.regex('^Отправить отчёт вышестоящим '
+                                                'инстанциям$'),
+                                  submit_files_to_subject),
+                   MessageHandler(Filters.regex('^Собрать отчёты$'),
+                                  get_submissions),
                    CommandHandler('start', start)],
-            COMBINE_GATHERING: [MessageHandler(Filters.all, get_file)],
-            GETTING_SURNAME: [MessageHandler(Filters.text, store_surname)]
+            COMBINE_GATHERING: [MessageHandler(Filters.all, get_file_for_pdf)],
+            GETTING_SURNAME: [MessageHandler(Filters.text, store_surname)],
+            SUBMIT_GATHERING: [MessageHandler(Filters.all, get_file_submission)],
+            SUBMIT_GETTING_SUBJECT: [MessageHandler(Filters.text, get_subject_name_submission)],
+            COLLECTING_SUBJECT: [MessageHandler(Filters.text, get_collecting_subject)]
         },
         fallbacks=[MessageHandler(Filters.all, error)]
     )

@@ -6,9 +6,11 @@ TOKEN = "916090859:AAEugs6uNfvbqq6nnuxk0h57kbfjcn6_T-o"
 
 admins = []
 people = {}
+subjects = {}
 path_to_people = 'config/people.cfg'
 path_to_admins = 'config/admins.cfg'
-path_to_subjects = 'subjects/'
+path_to_subjects = 'config/subjects.cfg'
+path_to_subjects_folder = 'subjects/'
 with open(path_to_people, encoding='utf-8') as file:
     for line in file.readlines():
         line = line.split()
@@ -16,11 +18,16 @@ with open(path_to_people, encoding='utf-8') as file:
 with open(path_to_admins, encoding='utf-8') as file:
     for line in file.readlines():
         admins.append(int(line))
+with open(path_to_subjects, encoding='utf-8') as file:
+    for line in file.readlines():
+        line = line.split()
+        subjects[line[0]] = line[1:]
 
 
 markups = {'idle': ReplyKeyboardMarkup([['Собрать отчёт в PDF',
-                                         'Встать в очередь, чтобы задать вопрос'],
-                                        ['Панель админ. доступа']],
+                                         'Отправить отчёт вышестоящим инстанциям'],
+                                        ['Встать в очередь, чтобы задать вопрос',
+                                         'Панель админ. доступа']],
                                        one_time_keyboard=True,
                                        resize_keyboard=True),
            'admin': ReplyKeyboardMarkup([['Получить архив с отчётами',
@@ -30,4 +37,5 @@ markups = {'idle': ReplyKeyboardMarkup([['Собрать отчёт в PDF',
            'gathering': ReplyKeyboardMarkup([['Конец']],
                                             resize_keyboard=True,
                                             one_time_keyboard=False),
+           'subjects': ReplyKeyboardMarkup([[subject] for subject in subjects])
            }

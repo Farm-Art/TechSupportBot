@@ -1,10 +1,11 @@
-from config import markups, path_to_subjects
+from config import markups, path_to_subjects_folder, path_to_subjects, subjects
 from img2pdf import convert
 from PyPDF2 import PdfFileMerger
 from zipfile import ZipFile
 import comtypes.client
+import shutil
+import tempfile
 import os
-
 
 comtypes.CoInitialize()
 
@@ -28,7 +29,9 @@ def access(admin=True):
                     return access_error(update, context)
             else:
                 return func(update, context)
+
         return result
+
     return wrapper
 
 
@@ -78,4 +81,56 @@ def combine_files(*args, name):
     return name + '.pdf'
 
 
+def add_to_archive(*files, subject, surname):
+    files = list(files)
+    if len(files) == 1:
+        filename = surname + '.' + files[0].split('.')[1]
+        os.rename(files[0], filename)
+        files[0] = filename
+    else:
+        with ZipFile(surname + '.zip', mode='a') as temp:
+            for file in files:
+                temp.write(file)
+            temp.close()
+        filename = surname + '.zip'
+    if check_for_copies(path_to_subjects_folder + subject + '.zip', filename):
+        remove_from_zip(path_to_subjects_folder + subject + '.zip', filename)
+    with ZipFile(path_to_subjects_folder + subject + '.zip', mode='a') as archive:
+        archive.write(filename)
+        archive.close()
+    for file in files:
+        os.remove(file)
+    if len(files) > 1:
+        os.remove(filename)
+    print(subjects.keys())
+    if not any(surname in names for names in subjects.values()):
+        subjects[subject].append(surname)
+        with open(path_to_subjects, mode='w', encoding='utf-8') as file:
+            for subject, students in subjects.items():
+                print(subject, *students, file=file)
 
+
+def check_for_copies(archive, filename):
+    try:
+        with ZipFile(archive) as data:
+            for file in data.filelist:
+                if file.filename == filename:
+                    return True
+        return False
+    except FileNotFoundError:
+        return False
+
+
+def remove_from_zip(zipfname, *filenames):
+    tempdir = tempfile.mkdtemp()
+    try:
+        tempname = os.path.join(tempdir, 'new.zip')
+        with ZipFile(zipfname, 'r') as zipread:
+            with ZipFile(tempname, 'w') as zipwrite:
+                for item in zipread.infolist():
+                    if item.filename not in filenames:
+                        data = zipread.read(item.filename)
+                        zipwrite.writestr(item, data)
+        shutil.move(tempname, zipfname)
+    finally:
+        shutil.rmtree(tempdir)
