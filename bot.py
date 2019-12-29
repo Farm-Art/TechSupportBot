@@ -39,14 +39,21 @@ def main(updater):
                    MessageHandler(Filters.regex('^Отправить отчёт вышестоящим '
                                                 'инстанциям$'),
                                   submit_files_to_subject),
-                   MessageHandler(Filters.regex('^Собрать отчёты$'),
+                   MessageHandler(Filters.regex('^Получить архив с отчётами$'),
                                   get_submissions),
+                   MessageHandler(Filters.regex('^Панель админ. доступа$'),
+                                  show_admin_panel),
+                   MessageHandler(Filters.regex('^Разослать "письма счастья"$'),
+                                  send_angry_letter),
                    CommandHandler('start', start)],
             COMBINE_GATHERING: [MessageHandler(Filters.all, get_file_for_pdf)],
             GETTING_SURNAME: [MessageHandler(Filters.text, store_surname)],
             SUBMIT_GATHERING: [MessageHandler(Filters.all, get_file_submission)],
             SUBMIT_GETTING_SUBJECT: [MessageHandler(Filters.text, get_subject_name_submission)],
-            COLLECTING_SUBJECT: [MessageHandler(Filters.text, get_collecting_subject)]
+            COLLECTING_SUBJECT: [MessageHandler(Filters.text, get_collecting_subject)],
+            GETTING_LETTER_SUBJECT: [MessageHandler(Filters.text, request_letter_type)],
+            GETTING_LETTER_TYPE: [MessageHandler(Filters.text, get_letter_type)],
+            GETTING_LETTER_TEXT: [MessageHandler(Filters.text, get_letter_text)]
         },
         fallbacks=[MessageHandler(Filters.all, error)]
     )

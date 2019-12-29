@@ -8,7 +8,9 @@ from utility import access, combine_files, add_to_archive
  SUBMIT_GATHERING,
  GETTING_SURNAME,
  COLLECTING_SUBJECT,
- ] = range(6)
+ GETTING_LETTER_TYPE,
+ GETTING_LETTER_TEXT,
+ GETTING_LETTER_SUBJECT] = range(9)
 
 
 def start(update, context):
@@ -19,7 +21,7 @@ def start(update, context):
         context.user_data['surname'] = people[uid]
     else:
         return request_surname(update, context)
-    update.message.reply_text('Пользователь распознан: {}'.format(context.user_data['surname']))
+    update.message.reply_text('Пользователь распознан: ' + context.user_data['surname'])
     if context.user_data['is_admin']:
         update.message.reply_text('Доброго дня, ваше величество, система распознала '
                                   'в вас администратора.',
@@ -189,3 +191,69 @@ def get_collecting_subject(update, context):
     else:
         update.message.reply_text('Такого предмета в наших списках не наблюдается.')
         return COLLECTING_SUBJECT
+
+
+@access(admin=True)
+def show_admin_panel(update, context):
+    update.message.reply_text('Пожалуйста.', reply_markup=markups['admin'])
+    return IDLE
+
+
+@access(admin=True)
+def send_angry_letter(update, context):
+    update.message.reply_text('По какому предмету вы желаете потребовать отчёты?',
+                              reply_markup=markups['subjects'])
+    return GETTING_LETTER_SUBJECT
+
+
+@access(admin=True)
+def request_letter_type(update, context):
+    if update.message.text in subjects:
+        context.user_data['subject'] = update.message.text
+        update.message.reply_text('Какие письма вы хотите разослать плебеям? Можно '
+                                  'разослать шаблонные, а можно отправить гонца с '
+                                  'посланием, сформулированным лично вами.',
+                                  reply_markup=markups['letter_type_choice'])
+        return GETTING_LETTER_TYPE
+    else:
+        update.message.reply_text('Ваше величество, вы ничего не путаете? В нашей базе '
+                                  'нет такого предмета.')
+        return GETTING_LETTER_SUBJECT
+
+
+@access(admin=True)
+def get_letter_type(update, context):
+    if update.message.text == 'Шаблонные':
+        update.message.reply_text('Начинаю рассылку.')
+        sent = []
+        for uid, surname in people.items():
+            if surname not in subjects[context.user_data['subject']]:
+                message = 'Где отчёты по предмету "{}", ' \
+                          'Лебов... кхм, то есть {}?'.format(context.user_data['subject'], surname)
+                update.message.bot.send_message(uid, message)
+                sent.append(surname)
+        update.message.reply_text('Успешно отправлены письма следующим людям:\n' + '\n'.join(sent),
+                                  reply_markup=markups['idle'])
+        return IDLE
+    elif update.message.text == 'Написать своё':
+        update.message.reply_text('Введите текст гневного письма для рассылки.')
+        return GETTING_LETTER_TEXT
+    else:
+        update.message.reply_text('Я не понимаю, что вы имеете ввиду, воспользуйтесь '
+                                  'клавиатурой с вариантами ответа.',
+                                  reply_markup=markups['subjects'])
+        return GETTING_LETTER_TYPE
+
+
+@access(admin=True)
+def get_letter_text(update, context):
+    update.message.reply_text('Начинаю рассылку.')
+    sent = []
+    for uid, surname in people.items():
+        if surname not in subjects[context.user_data['subject']]:
+            message = update.message.text
+            update.message.bot.send_message(uid, message)
+            sent.append(surname)
+    update.message.reply_text('Успешно отправлены письма следующим людям:\n' + '\n'.join(sent),
+                              reply_markup=markups['idle'])
+    return IDLE

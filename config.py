@@ -1,7 +1,7 @@
 from telegram import ReplyKeyboardMarkup
 
 
-TOKEN = "916090859:AAEugs6uNfvbqq6nnuxk0h57kbfjcn6_T-o"
+TOKEN = "TOKEN"
 
 
 admins = []
@@ -21,7 +21,8 @@ with open(path_to_admins, encoding='utf-8') as file:
 with open(path_to_subjects, encoding='utf-8') as file:
     for line in file.readlines():
         line = line.split()
-        subjects[line[0]] = line[1:]
+        namelen = int(line[0])
+        subjects[' '.join(line[1:namelen+1])] = line[namelen+1:]
 
 
 markups = {'idle': ReplyKeyboardMarkup([['Собрать отчёт в PDF',
@@ -32,10 +33,15 @@ markups = {'idle': ReplyKeyboardMarkup([['Собрать отчёт в PDF',
                                        resize_keyboard=True),
            'admin': ReplyKeyboardMarkup([['Получить архив с отчётами',
                                           'Разослать "письма счастья"']],
-                                        one_time_keyboard=False,
+                                        one_time_keyboard=True,
                                         resize_keyboard=True),
            'gathering': ReplyKeyboardMarkup([['Конец']],
                                             resize_keyboard=True,
                                             one_time_keyboard=False),
-           'subjects': ReplyKeyboardMarkup([[subject] for subject in subjects])
+           'subjects': ReplyKeyboardMarkup([[subject] for subject in subjects],
+                                           resize_keyboard=True,
+                                           one_time_keyboard=False),
+           'letter_type_choice': ReplyKeyboardMarkup([['Шаблонные', 'Написать своё']],
+                                                     resize_keyboard=True,
+                                                     one_time_keyboard=False)
            }
