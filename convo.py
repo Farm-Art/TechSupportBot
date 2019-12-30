@@ -1,5 +1,5 @@
-from config import admins, people, markups, subjects, path_to_subjects_folder
-import config, os
+from config import admins, people, markups, subjects, path_to_subjects_folder, queue, music_tracks
+import config, os, random
 from utility import access, combine_files, add_to_archive
 
 [IDLE,
@@ -255,5 +255,63 @@ def get_letter_text(update, context):
             update.message.bot.send_message(uid, message)
             sent.append(surname)
     update.message.reply_text('Успешно отправлены письма следующим людям:\n' + '\n'.join(sent),
+                              reply_markup=markups['idle'])
+    return IDLE
+
+
+@access(admin=False)
+def put_in_queue(update, context):
+    if context.user_data.get('in_queue', False):
+        update.message.reply_text('Вы уже находитесь в очереди, алё',
+                                  reply_markup=markups['idle'])
+    else:
+        queue.append(context.user_data['uid'])
+        context.user_data['in_queue'] = True
+        update.message.reply_text('Ваша позиция в очереди - ' + str(len(queue)),
+                                  reply_markup=markups['idle'])
+    return IDLE
+
+
+@access(admin=False)
+def remove_from_queue(update, context):
+    if not context.user_data.get('in_queue', False):
+        update.message.reply_text('Вас и так не было в очереди',
+                                  reply_markup=markups['idle'])
+    else:
+        queue.remove(context.user_data['uid'])
+        update.message.reply_text('Вас больше нет в очереди >.>b',
+                                  reply_markup=markups['idle'])
+        context.user_data['in_queue'] = False
+    return IDLE
+
+
+@access(admin=True)
+def tell_next(update, context):
+    if queue:
+        update.message.bot.send_message(queue.pop(0), 'Подошла ваша очередь!')
+        update.message.reply_text('Вызван следующий, это ' + people[context.user_data['uid']],
+                                  reply_markup=markups['idle'])
+    else:
+        update.message.reply_text('Очередь пуста, ваше величество.',
+                                  reply_markup=markups['idle'])
+    return IDLE
+
+
+@access(admin=False)
+def get_queue_position(update, context):
+    if context.user_data.get('in_queue', False):
+        update.message.reply_text('Ваша позиция в очереди - ' + str(queue.index(context.user_data['uid']) + 1),
+                                  reply_markup=markups['idle'])
+    else:
+        update.message.reply_text('Вы не находитесь в очереди',
+                                  reply_markup=markups['idle'])
+    return IDLE
+
+
+@access(admin=False)
+def get_music(update, context):
+    with open(random.choice(music_tracks), mode='rb') as file:
+        update.message.reply_audio(file)
+    update.message.reply_text('Держите, приятного прослушивания',
                               reply_markup=markups['idle'])
     return IDLE
