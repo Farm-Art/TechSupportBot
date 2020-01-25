@@ -32,38 +32,13 @@ def setup_proxy_and_start(token, proxy=True):
 def main(updater):
     dp = updater.dispatcher
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler('start', IdleController(0).start)],
         states={
-            IDLE: [MessageHandler(Filters.regex('^Собрать отчёт в PDF$'),
-                                  combine_pdfs),
-                   MessageHandler(Filters.regex('^Отправить отчёт вышестоящим '
-                                                'инстанциям$'),
-                                  submit_files_to_subject),
-                   MessageHandler(Filters.regex('^Получить архив с отчётами$'),
-                                  get_submissions),
-                   MessageHandler(Filters.regex('^Панель админ. доступа$'),
-                                  show_admin_panel),
-                   MessageHandler(Filters.regex('^Разослать "письма счастья"$'),
-                                  send_angry_letter),
-                   MessageHandler(Filters.regex('^Встать в очередь$'),
-                                  put_in_queue),
-                   MessageHandler(Filters.regex('^Выйти из очереди$'),
-                                  remove_from_queue),
-                   MessageHandler(Filters.regex('^Следующий$'),
-                                  tell_next),
-                   MessageHandler(Filters.regex('^Послушать музыку$'),
-                                  get_music),
-                   CommandHandler('start', start)],
-            COMBINE_GATHERING: [MessageHandler(Filters.all, get_file_for_pdf)],
-            GETTING_SURNAME: [MessageHandler(Filters.text, store_surname)],
-            SUBMIT_GATHERING: [MessageHandler(Filters.all, get_file_submission)],
-            SUBMIT_GETTING_SUBJECT: [MessageHandler(Filters.text, get_subject_name_submission)],
-            COLLECTING_SUBJECT: [MessageHandler(Filters.text, get_collecting_subject)],
-            GETTING_LETTER_SUBJECT: [MessageHandler(Filters.text, request_letter_type)],
-            GETTING_LETTER_TYPE: [MessageHandler(Filters.text, get_letter_type)],
-            GETTING_LETTER_TEXT: [MessageHandler(Filters.text, get_letter_text)]
+            IdleController.IDLE: [MessageHandler(Filters.all, IdleController(0))],
+            IdleController.REGISTER: [MessageHandler(Filters.text, RegisterSurname())],
+            IdleController.QUEUE: [MessageHandler(Filters.text, QueueUp())]
         },
-        fallbacks=[MessageHandler(Filters.all, error)]
+        fallbacks=[MessageHandler(Filters.all, IdleController.error)]
     )
     dp.add_handler(conv_handler)
     updater.start_polling()
@@ -72,3 +47,6 @@ def main(updater):
 
 if __name__ == '__main__':
     setup_proxy_and_start(TOKEN, True)
+
+
+

@@ -1,317 +1,219 @@
-from config import admins, people, markups, subjects, path_to_subjects_folder, queue, music_tracks
-import config, os, random
-from utility import access, combine_files, add_to_archive
-
-[IDLE,
- COMBINE_GATHERING,
- SUBMIT_GETTING_SUBJECT,
- SUBMIT_GATHERING,
- GETTING_SURNAME,
- COLLECTING_SUBJECT,
- GETTING_LETTER_TYPE,
- GETTING_LETTER_TEXT,
- GETTING_LETTER_SUBJECT] = range(9)
+from telegram import ReplyKeyboardMarkup
+from config import admins, users, queue, music_tracks
+import config, random
+from framework import Feature
+from telegram import ChatAction
 
 
-def start(update, context):
-    uid = update.message.from_user.id
-    context.user_data['is_admin'] = uid in admins
-    context.user_data['uid'] = uid
-    if uid in people:
-        context.user_data['surname'] = people[uid]
-    else:
-        return request_surname(update, context)
-    update.message.reply_text('Пользователь распознан: ' + context.user_data['surname'])
-    if context.user_data['is_admin']:
-        update.message.reply_text('Доброго дня, ваше величество, система распознала '
-                                  'в вас администратора.',
-                                  reply_markup=markups['idle'])
-    else:
-        update.message.reply_text('СТП им. Арташеса, слушаем вас.',
-                                  reply_markup=markups['idle'])
-    return IDLE
+def access_error(update, context, state):
+    update.message.reply_text('У вас недостаточно прав для '
+                              'использования этой команды.',
+                              reply_markup=IdleController.markups['idle'])
+    return state
 
 
-def error(update, context):
-    update.message.reply_text('Произошёл троллинг, и бот не смог адекватно '
-                              'среагировать на происходящее.',
-                              reply_markup=markups['idle'])
-    return IDLE
+def access(admin=True, state=0):
+    def wrapper(func):
+        def result(self, update, context):
+            if admin:
+                if context.user_data['is_admin']:
+                    return func(self, update, context)
+                else:
+                    return access_error(update, context, state)
+            else:
+                return func(self, update, context)
+        return result
+    return wrapper
 
 
-@access(admin=False)
-def request_surname(update, context):
-    update.message.reply_text('Видимо, вы пользуетесь этим ботом впервые. '
-                              'Для продолжения использования, введите '
-                              'вашу фамилию - мы запишем её в паре с вашим '
-                              'Telegram UID для, например, дальнейшей '
-                              'подстановки в имена файлов.')
-    return GETTING_SURNAME
+def set_state(context, state):
+    context.user_data['substate'] = state
 
 
-@access(admin=False)
-def store_surname(update, context):
-    surname = update.message.text.capitalize()
-    with open(config.path_to_people, mode='a', encoding='utf-8') as file:
-        print(context.user_data['uid'], surname,
-              file=file)
-        people[context.user_data['uid']] = surname
-        context.user_data['surname'] = surname
-        file.close()
-    update.message.reply_text('Вы были успешно занесены в список.',
-                              reply_markup=markups['idle'])
-    return IDLE
+class IdleController(Feature):
+    [
+     IDLE,
+     REGISTER,
+     QUEUE
+    ] = range(3)
 
+    markups = {
+        'idle': ReplyKeyboardMarkup([['Взаимодействие с очередью']]),
+    }
 
-@access(admin=True)
-def combine_pdfs(update, context):
-    context.user_data['files'] = []
-    update.message.reply_text('Отправьте файлы в порядке склейки. '
-                              'Бот принимает файлы .pdf, .jpg, .png, '
-                              '.docx и .doc.',
-                              reply_markup=markups['gathering'])
-    return COMBINE_GATHERING
+    def __init__(self, entry_state):
+        super().__init__(entry_state)
+        self.funcs = {
+            None: self.switch,
+            'switching': self.switch
+        }
+        self.features = {
+            'взаимодействие с очередью': QueueUp()
+        }
 
-
-@access(admin=False)
-def get_file_for_pdf(update, context):
-    if update.message.photo:
-        link = update.message.photo[0].get_file()
-        if any(link.file_path.endswith(ext) for ext in ['.jpg', '.png']):
-            file = str(link.download())
-            context.user_data['files'].append(file)
-            update.message.reply_text('Файл успешно добавлен в список '
-                                      'на склейку.')
+    def start(self, update, context):
+        context.user_data['uid'] = update.message.from_user.id
+        if context.user_data['uid'] not in users:
+            return RegisterSurname().enter(update, context)
+        if context.user_data['uid'] in admins:
+            update.message.reply_text('Система почувствовала в вас королевскую '
+                                      'кровь. Доброго дня, ваше величество.',
+                                      reply_markup=self.markups['idle'])
         else:
-            update.message.reply_text('Некорректное расширение файла. '
-                                      'Файл пропущен, процесс склейки ещё '
-                                      'активен.')
-    elif update.message.document:
-        link = update.message.document.get_file()
-        if any(link.file_path.endswith(ext) for ext in ['.jpg', '.png', '.doc',
-                                                        '.docx', '.pdf']):
-            file = str(link.download())
-            context.user_data['files'].append(file)
-            update.message.reply_text('Файл успешно добавлен в список '
-                                      'на склейку.')
-        else:
-            update.message.reply_text('Некорректное расширение файла. '
-                                      'Файл пропущен, процесс склейки ещё '
-                                      'активен.')
-    elif update.message.text.lower() == 'конец':
-        update.message.reply_text('Начинаю склейку...')
-        path = combine_files(*context.user_data['files'],
-                             name=context.user_data['surname'])
-        with open(path, mode='rb') as file:
-            update.message.reply_document(file, reply_markup=markups['idle'])
+            update.message.reply_text('Добрый день, СТП слушает вас.',
+                                      reply_markup=self.markups['idle'])
+        context.user_data['surname'] = users[context.user_data['uid']]
+        context.user_data['is_admin'] = context.user_data['uid'] in admins
+        set_state(context, None)
+        return self.IDLE
+
+    def switch(self, update, context):
+        if update.message.text.lower() in self.features:
+            set_state(context, None)
+            return self.features[update.message.text.lower()](update, context)
+        update.message.reply_text('Такой команды я не знаю, извиняйте')
+        return self.IDLE
+
+    def error(self, update, context):
+        update.message.reply_text('Произошёл троллинг.')
+        set_state(context, None)
+        return self.IDLE
+
+
+class RegisterSurname(Feature):
+    state = IdleController.REGISTER
+    markups = {
+        'idle': IdleController.markups['idle']
+    }
+
+    def __init__(self):
+        super().__init__(self.state)
+        self.enter = self.request
+        self.funcs = {
+            None: self.request,
+            'requesting surname': self.store
+        }
+
+    def request(self, update, context):
+        update.message.reply_text('Похоже, что вы ещё не зарегистрированы '
+                                  'в нашей системе. Для продолжения работы '
+                                  'с ботом, введите свою фамилию. Мы запишем '
+                                  'её вместе с вашим Telegram UID для '
+                                  'дальнейшей идентификации и таких процедур, '
+                                  'как автоматическая подпись отчётов.')
+        set_state(context, 'requesting surname')
+        return self.state
+
+    def store(self, update, context):
+        surname = update.message.text.capitalize()
+        with open(config.path_to_users, mode='a', encoding='utf-8') as file:
+            print(context.user_data['uid'], surname,
+                  file=file)
+            users[context.user_data['uid']] = surname
+            context.user_data['surname'] = surname
             file.close()
-        os.remove(path)
-        return IDLE
-    else:
-        update.message.reply_text('Было бы здорово, если бы вы прислали файл.')
-    return COMBINE_GATHERING
+        update.message.reply_text('Успешно добавлен пользователь с UID={} и '
+                                  'фамилией={}'.format(context.user_data['uid'],
+                                                       update.message.text.capitalize()))
+        return self.release(update, context)
 
 
-@access(admin=False)
-def submit_files_to_subject(update, context):
-    update.message.reply_text('Выберите имя предмета, отчёт по которому '
-                              'вы добавляете.', reply_markup=markups['subjects'])
-    return SUBMIT_GETTING_SUBJECT
+class QueueUp(Feature):
+    markups = {
+        'menu': ReplyKeyboardMarkup([['Встать в очередь', 'Выйти из очереди'],
+                                     ['Положение в очереди', 'Послушать музыку'],
+                                     ['Вернуться в главное меню']],
+                                    one_time_keyboard=False,
+                                    resize_keyboard=True),
+        'idle': IdleController.markups['idle']
+    }
+    state = IdleController.QUEUE
 
+    def __init__(self):
+        super().__init__(IdleController.QUEUE)
+        self.funcs = {
+            None: self.enter,
+            'choosing': self.switcher,
+            'встать в очередь': self.put_in_queue,
+            'выйти из очереди': self.pop_from_queue,
+            'положение в очереди': self.tell_queue_pos,
+            'послушать музыку': self.send_music,
+            'next': self.next,
+            'view': self.view,
+            'вернуться в главное меню': self.release,
+        }
 
-@access(admin=False)
-def get_subject_name_submission(update, context):
-    if update.message.text in subjects:
-        context.user_data['subject'] = update.message.text
-        context.user_data['files'] = []
-        update.message.reply_text('Отправьте по очереди все необходимые файлы. '
-                                  'Если вы пришлёте несколько файлов, они будут '
-                                  'автоматически объединены в ZIP-архив. '
-                                  'Повторная попытка отправить файлы по какому-то '
-                                  'предмету перезапишет отправленные ранее файлы.',
-                                  reply_markup=markups['gathering'])
-        return SUBMIT_GATHERING
-    else:
-        update.message.reply_text('Такого предмета в списке не наблюдается.')
-        return SUBMIT_GETTING_SUBJECT
+    def enter(self, update, context):
+        update.message.reply_text('Что именно вы хотите сделать?',
+                                  reply_markup=self.markups['menu'])
+        set_state(context, 'choosing')
+        return self.state
 
-
-@access(admin=False)
-def get_file_submission(update, context):
-    if update.message.photo:
-        link = update.message.photo[0].get_file()
-        file = str(link.download())
-        os.rename(file, update.message.document.file_name)
-        context.user_data['files'].append(update.message.document.file_name)
-        update.message.reply_text('Файл успешно добавлен в список.')
-        return SUBMIT_GATHERING
-    elif update.message.document:
-        link = update.message.document.get_file()
-        file = str(link.download())
-        os.rename(file, update.message.document.file_name)
-        context.user_data['files'].append(update.message.document.file_name)
-        update.message.reply_text('Файл успешно добавлен в список.')
-        return SUBMIT_GATHERING
-    elif update.message.text.lower() == 'конец':
-        update.message.reply_text('Начинаю склейку...')
-        add_to_archive(*context.user_data['files'],
-                       subject=context.user_data['subject'],
-                       surname=context.user_data['surname'])
-        update.message.reply_text('Готово.',
-                                  reply_markup=markups['idle'])
-        return IDLE
-    else:
-        update.message.reply_text('Это не похоже на файл, ты за идиота меня '
-                                  'принимаешь?')
-        return SUBMIT_GATHERING
-
-
-@access(admin=True)
-def get_submissions(update, context):
-    update.message.reply_text('Выберите предмет, отчёты по которому вы желаете собрать.',
-                              reply_markup=markups['subjects'])
-    return COLLECTING_SUBJECT
-
-
-@access(admin=True)
-def get_collecting_subject(update, context):
-    if update.message.text in subjects:
-        if subjects[update.message.text]:
-            with open(path_to_subjects_folder + update.message.text + '.zip',
-                      mode='rb') as file:
-                update.message.reply_text('Получите-распишитесь:',
-                                          reply_markup=markups['idle'])
-                update.message.reply_document(file)
+    def switcher(self, update, context):
+        msg = update.message.text.lower()
+        if msg in self.funcs:
+            context.user_data['substate'] = msg
+            return self(update, context)
         else:
-            update.message.reply_text('Холопы ещё не прислали ни единого отчёта по '
-                                      'выбранному предмету. Советуем разослать '
-                                      '"письма счастья", ваше величество.',
-                                      reply_markup=markups['idle'])
-        return IDLE
-    else:
-        update.message.reply_text('Такого предмета в наших списках не наблюдается.')
-        return COLLECTING_SUBJECT
+            update.message.reply_text('Я такой команды не знаю :/')
+            return self.state
 
+    def put_in_queue(self, update, context):
+        uid = context.user_data['uid']
+        if uid in queue:
+            update.message.reply_text('Вы уже находитесь в очереди.')
+            context.user_data['substate'] = 'choosing'
+        else:
+            queue.append(uid)
+            update.message.reply_text('Вы были добавлены в очередь. '
+                                      'Ваша позиция - {}'.format(len(queue)))
+        set_state(context, 'choosing')
+        return self.state
 
-@access(admin=True)
-def show_admin_panel(update, context):
-    update.message.reply_text('Пожалуйста.', reply_markup=markups['admin'])
-    return IDLE
+    def pop_from_queue(self, update, context):
+        uid = context.user_data['uid']
+        if uid in queue:
+            queue.remove(uid)
+            update.message.reply_text('Вы были успешно удалены из очереди.')
+        else:
+            update.message.reply_text('Вас не было в очереди!')
+        set_state(context, 'choosing')
+        return self.state
 
+    def tell_queue_pos(self, update, context):
+        uid = context.user_data['uid']
+        if uid in queue:
+            update.message.reply_text('Ваше положение в '
+                                      'очереди - {}'.format(queue.index(uid) + 1))
+        else:
+            update.message.reply_text('Вас нет в очереди!')
+        set_state(context, 'choosing')
+        return self.state
 
-@access(admin=True)
-def send_angry_letter(update, context):
-    update.message.reply_text('По какому предмету вы желаете потребовать отчёты?',
-                              reply_markup=markups['subjects'])
-    return GETTING_LETTER_SUBJECT
+    def send_music(self, update, context):
+        context.bot.send_chat_action(chat_id=update.effective_message.chat_id,
+                                     action=ChatAction.UPLOAD_DOCUMENT)
+        with open(random.choice(music_tracks), mode='rb') as file:
+            update.message.reply_audio(file)
+        update.message.reply_text('Наслаждайтесь прослушиванием.')
+        set_state(context, 'choosing')
+        return self.state
 
+    @access(admin=True, state=state)
+    def next(self, update, context):
+        if queue:
+            uid = queue.pop(0)
+            update.message.reply_text('Вызываю {}'.format(users[uid]))
+            context.bot.send_message(uid, 'Пришла ваша очередь!')
+        else:
+            update.message.reply_text('Очередь пуста!')
+        set_state(context, 'choosing')
+        return self.state
 
-@access(admin=True)
-def request_letter_type(update, context):
-    if update.message.text in subjects:
-        context.user_data['subject'] = update.message.text
-        update.message.reply_text('Какие письма вы хотите разослать плебеям? Можно '
-                                  'разослать шаблонные, а можно отправить гонца с '
-                                  'посланием, сформулированным лично вами.',
-                                  reply_markup=markups['letter_type_choice'])
-        return GETTING_LETTER_TYPE
-    else:
-        update.message.reply_text('Ваше величество, вы ничего не путаете? В нашей базе '
-                                  'нет такого предмета.')
-        return GETTING_LETTER_SUBJECT
-
-
-@access(admin=True)
-def get_letter_type(update, context):
-    if update.message.text == 'Шаблонные':
-        update.message.reply_text('Начинаю рассылку.')
-        sent = []
-        for uid, surname in people.items():
-            if surname not in subjects[context.user_data['subject']]:
-                message = 'Где отчёты по предмету "{}", ' \
-                          'Лебов... кхм, то есть {}?'.format(context.user_data['subject'], surname)
-                update.message.bot.send_message(uid, message)
-                sent.append(surname)
-        update.message.reply_text('Успешно отправлены письма следующим людям:\n' + '\n'.join(sent),
-                                  reply_markup=markups['idle'])
-        return IDLE
-    elif update.message.text == 'Написать своё':
-        update.message.reply_text('Введите текст гневного письма для рассылки.')
-        return GETTING_LETTER_TEXT
-    else:
-        update.message.reply_text('Я не понимаю, что вы имеете ввиду, воспользуйтесь '
-                                  'клавиатурой с вариантами ответа.',
-                                  reply_markup=markups['subjects'])
-        return GETTING_LETTER_TYPE
-
-
-@access(admin=True)
-def get_letter_text(update, context):
-    update.message.reply_text('Начинаю рассылку.')
-    sent = []
-    for uid, surname in people.items():
-        if surname not in subjects[context.user_data['subject']]:
-            message = update.message.text
-            update.message.bot.send_message(uid, message)
-            sent.append(surname)
-    update.message.reply_text('Успешно отправлены письма следующим людям:\n' + '\n'.join(sent),
-                              reply_markup=markups['idle'])
-    return IDLE
-
-
-@access(admin=False)
-def put_in_queue(update, context):
-    if context.user_data.get('in_queue', False):
-        update.message.reply_text('Вы уже находитесь в очереди, алё',
-                                  reply_markup=markups['idle'])
-    else:
-        queue.append(context.user_data['uid'])
-        context.user_data['in_queue'] = True
-        update.message.reply_text('Ваша позиция в очереди - ' + str(len(queue)),
-                                  reply_markup=markups['idle'])
-    return IDLE
-
-
-@access(admin=False)
-def remove_from_queue(update, context):
-    if not context.user_data.get('in_queue', False):
-        update.message.reply_text('Вас и так не было в очереди',
-                                  reply_markup=markups['idle'])
-    else:
-        queue.remove(context.user_data['uid'])
-        update.message.reply_text('Вас больше нет в очереди >.>b',
-                                  reply_markup=markups['idle'])
-        context.user_data['in_queue'] = False
-    return IDLE
-
-
-@access(admin=True)
-def tell_next(update, context):
-    if queue:
-        update.message.bot.send_message(queue.pop(0), 'Подошла ваша очередь!')
-        update.message.reply_text('Вызван следующий, это ' + people[context.user_data['uid']],
-                                  reply_markup=markups['idle'])
-    else:
-        update.message.reply_text('Очередь пуста, ваше величество.',
-                                  reply_markup=markups['idle'])
-    return IDLE
-
-
-@access(admin=False)
-def get_queue_position(update, context):
-    if context.user_data.get('in_queue', False):
-        update.message.reply_text('Ваша позиция в очереди - ' + str(queue.index(context.user_data['uid']) + 1),
-                                  reply_markup=markups['idle'])
-    else:
-        update.message.reply_text('Вы не находитесь в очереди',
-                                  reply_markup=markups['idle'])
-    return IDLE
-
-
-@access(admin=False)
-def get_music(update, context):
-    with open(random.choice(music_tracks), mode='rb') as file:
-        update.message.reply_audio(file)
-    update.message.reply_text('Держите, приятного прослушивания',
-                              reply_markup=markups['idle'])
-    return IDLE
+    @access(admin=True, state=state)
+    def view(self, update, context):
+        update.message.reply_text('В очереди {} человек(а). Вот список:\n{}'.format(
+            len(queue), '\n'.join(queue)
+        ))
+        set_state(context, 'choosing')
+        return self.state

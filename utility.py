@@ -1,4 +1,4 @@
-from config import markups, path_to_subjects_folder, path_to_subjects, subjects
+from config import path_to_subjects_folder, path_to_subjects, subjects
 from img2pdf import convert
 from PyPDF2 import PdfFileMerger
 from zipfile import ZipFile
@@ -8,31 +8,6 @@ import tempfile
 import os
 
 comtypes.CoInitialize()
-
-
-def access_error(update, context):
-    update.message.reply_text('У вас недостаточно прав для '
-                              'использования этой команды.')
-    update.message.reply_text('Ну или вашей фамилии нет в базе данных, '
-                              'В таком случае пропишите /start.',
-                              reply_markup=markups['idle'])
-    return 0
-
-
-def access(admin=True):
-    def wrapper(func):
-        def result(update, context):
-            if admin:
-                if context.user_data['is_admin']:
-                    return func(update, context)
-                else:
-                    return access_error(update, context)
-            else:
-                return func(update, context)
-
-        return result
-
-    return wrapper
 
 
 def convert_from_docx(filename):
@@ -134,3 +109,30 @@ def remove_from_zip(zipfname, *filenames):
         shutil.move(tempname, zipfname)
     finally:
         shutil.rmtree(tempdir)
+
+
+class Generator:
+    curr = 0
+    step = 1
+
+    @classmethod
+    def __getitem__(cls, item):
+        for _ in range(item):
+            yield cls.curr
+            cls.curr += cls.step
+
+
+class Feature:
+    gen = Generator()
+
+    def __init__(self):
+        self.handlers = []
+        self.states = []
+        self.markups = {}
+
+    def __getitem__(self, item):
+        return self.handlers[item]
+
+    def keys(self):
+        return self.states
+
